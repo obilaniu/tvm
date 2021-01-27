@@ -20,15 +20,9 @@ set -e
 set -u
 set -o pipefail
 
-echo deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main\
-     >> /etc/apt/sources.list.d/llvm.list
-echo deb-src http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main\
-     >> /etc/apt/sources.list.d/llvm.list
-
-echo deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic main\
-     >> /etc/apt/sources.list.d/llvm.list
-echo deb-src http://apt.llvm.org/bionic/ llvm-toolchain-bionic main\
-     >> /etc/apt/sources.list.d/llvm.list
-
-wget -q -O - http://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
-apt-get update && apt-get install -y llvm-10 clang-10
+# h5py is pinned to minor than 3 due to issues with
+# tensorflow:
+# https://github.com/tensorflow/tensorflow/issues/44467
+pip3 install matplotlib Pillow pycocotools tqdm \
+     torch==1.7.1+cpu torchvision==0.8.2+cpu \
+     -f https://download.pytorch.org/whl/torch_stable.html

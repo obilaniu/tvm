@@ -122,6 +122,7 @@ class OperatorConverter(object):
             "MIRROR_PAD": self.convert_mirror_pad,
             "MUL": self.convert_mul,
             "NEG": self.convert_neg,
+            "NON_MAX_SUPPRESSION_V5": self.convert_nms_v5,
             "NOT_EQUAL": self.convert_not_equal,
             "ONE_HOT": self.convert_one_hot,
             "PACK": self.convert_pack,
@@ -3102,6 +3103,58 @@ class OperatorConverter(object):
         boxes = _op.concatenate([ret[3], ret[2], ret[5], ret[4]], axis=2)
         ret = _expr.TupleWrapper(_expr.Tuple([boxes, cls_ids, scores, valid_count]), size=4)
         return ret
+
+    def convert_nms_v5(self, op):
+        """Convert TFLite NON_MAX_SUPPRESSION_V5"""
+        inputs = self.get_input_tensors(op)
+        boxes           = self.get_tensor_expr(inputs[0])
+        scores          = self.get_tensor_expr(inputs[1])
+        max_output_size = int  (self.get_tensor_value(inputs[2]))
+        iou_threshold   = float(self.get_tensor_value(inputs[3]))
+        score_threshold = float(self.get_tensor_value(inputs[4]))
+        soft_nms_sigma  = float(self.get_tensor_value(inputs[5]))
+        if soft_nms_sigma != 0.0:
+            raise tvm.error.OpAttributeUnImplemented(
+                "soft_nms_sigma for NonMaxSuppressionV5 is not supported"
+            )
+
+        # Generate data with shape (1, num_anchors, 5)
+        scorex = _op.expand_dims(scores, 1, 1)
+        data = _op.concatenate([scorex, boxes], 1)
+        data = _op.expand_dims(data, 0, 1)
+
+        # reason why using get_valid_counts is for inference performance
+        ct, data, indices = _op.vision.get_valid_counts(
+            data, score_threshold=score_threshold, id_index=-1, score_index=0
+        )
+        # TensorFlow NMS doesn't have parameter top_k
+        top_k = -1
+        # TF doesn't have class id for nms input
+        score_index = 0
+        nms_ret = _op.vision.non_max_suppression(
+            data=data,
+            valid_count=ct,
+            indices=indices,
+            max_output_size=max_output_size,
+            iou_threshold=iou_threshold,
+            force_suppress=True,
+            top_k=top_k,
+            coord_start=1,
+            score_index=score_index,
+            id_index=-1,
+            return_indices=True,
+            invalid_to_bottom=False,
+        )
+
+        # squeeze it, TF NMS is not batched
+        size = _op.squeeze(nms_ret[1], axis=[1])
+        data_slice = _op.squeeze(nms_ret[0], axis=[0])
+
+        # slice to get the dynamic result
+        ret = _op.strided_slice(data_slice, begin=_expr.const([0]), end=size, slice_mode="size")
+
+        ret_scores = _op.take(scores, ret, axis=0)
+        return _expr.TupleWrapper(_expr.Tuple([ret, ret_scores, size]), size=3)
 
     def convert_expand_dims(self, op):
         """Convert TFLite EXPAND_DIMS"""

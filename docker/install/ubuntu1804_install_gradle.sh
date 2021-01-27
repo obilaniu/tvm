@@ -6,9 +6,9 @@
 # to you under the Apache License, Version 2.0 (the
 # "License"); you may not use this file except in compliance
 # with the License.  You may obtain a copy of the License at
-#
+# 
 #   http://www.apache.org/licenses/LICENSE-2.0
-#
+# 
 # Unless required by applicable law or agreed to in writing,
 # software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -16,19 +16,21 @@
 # specific language governing permissions and limitations
 # under the License.
 
-set -e
-set -u
+. /etc/profile
+
+set -o errexit -o nounset
 set -o pipefail
 
-echo deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main\
-     >> /etc/apt/sources.list.d/llvm.list
-echo deb-src http://apt.llvm.org/bionic/ llvm-toolchain-bionic-10 main\
-     >> /etc/apt/sources.list.d/llvm.list
+GRADLE_HOME=/opt/gradle
+GRADLE_VERSION=5.4.1
+GRADLE_SHA256=7bdbad1e4f54f13c8a78abc00c26d44dd8709d4aedb704d913fb1bb78ac025dc
 
-echo deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic main\
-     >> /etc/apt/sources.list.d/llvm.list
-echo deb-src http://apt.llvm.org/bionic/ llvm-toolchain-bionic main\
-     >> /etc/apt/sources.list.d/llvm.list
-
-wget -q -O - http://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
-apt-get update && apt-get install -y llvm-10 clang-10
+echo "Downloading Gradle"
+wget -q --output-document=gradle.zip "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+echo "Checking Gradle hash"
+echo "${GRADLE_SHA256} *gradle.zip" | sha256sum --check -
+echo "Installing Gradle"
+unzip gradle.zip
+rm gradle.zip
+mv "gradle-${GRADLE_VERSION}" "${GRADLE_HOME}/"
+ln --symbolic "${GRADLE_HOME}/bin/gradle" /usr/bin/gradle
