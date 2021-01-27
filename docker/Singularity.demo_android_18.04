@@ -1,0 +1,85 @@
+Bootstrap: docker
+From: ubuntu:18.04
+Stage: build
+
+
+%files
+install/*.sh /install/
+
+
+%post
+# Install dependencies.
+apt-get update --fix-missing
+apt-get install -y nano vim emacs less git
+bash /install/ubuntu_install_core.sh
+bash /install/ubuntu1804_install_python.sh
+bash /install/ubuntu_install_python_package.sh
+bash /install/ubuntu_install_tensorflow.sh
+bash /install/ubuntu_install_pytorch.sh
+bash /install/ubuntu_install_java.sh    # OpenJDK 11 does *not* work - missing `javah`.
+bash /install/ubuntu1804_install_llvm.sh
+bash /install/ubuntu1804_install_clang_format.sh
+bash /install/ubuntu1804_install_gradle.sh
+bash /install/ubuntu1804_install_androidsdk.sh
+#bash /install/ubuntu_install_vulkan.sh
+
+#export VULKAN_SDK=/usr
+#echo "export VULKAN_SDK=\"${VULKAN_SDK}\"" >> $SINGULARITY_ENVIRONMENT
+
+git clone https://github.com/KhronosGroup/OpenCL-Headers /usr/local/OpenCL-Headers/
+
+# Build TVM
+cd /usr
+git clone --recursive https://github.com/obilaniu/tvm.git tvm
+cd tvm
+git checkout simplified
+mkdir -p build
+cd build
+cmake -DUSE_LLVM=llvm-config-10 \
+      -DUSE_RPC=ON \
+      -DUSE_SORT=ON \
+      -DUSE_GRAPH_RUNTIME=ON \
+      ..
+make -j10
+
+# Environment variables
+export PYTHONPATH=/usr/tvm/python:/usr/tvm/vta/python${PYTHONPATH:+:}${PYTHONPATH}
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64/jre
+export ANDROID_HOME=/opt/android-sdk-linux/
+export ANDROID_NDK_HOME=/opt/android-sdk-linux/ndk/21.3.6528147
+export TVM_NDK_CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android27-clang++"
+export TVM_TRACKER_HOST=0.0.0.0
+export TVM_TRACKER_PORT=9190
+
+echo "export PYTHONPATH=\"${PYTHONPATH}\""             >> $SINGULARITY_ENVIRONMENT
+echo "export JAVA_HOME=\"${JAVA_HOME}\""               >> $SINGULARITY_ENVIRONMENT
+echo "export ANDROID_HOME=\"${ANDROID_HOME}\""         >> $SINGULARITY_ENVIRONMENT
+echo "export ANDROID_NDK_HOME=\"${ANDROID_NDK_HOME}\"" >> $SINGULARITY_ENVIRONMENT
+echo "export TVM_NDK_CC=\"${TVM_NDK_CC}\""             >> $SINGULARITY_ENVIRONMENT
+echo "export TVM_TRACKER_HOST=\"${TVM_TRACKER_HOST}\"" >> $SINGULARITY_ENVIRONMENT
+echo "export TVM_TRACKER_PORT=\"${TVM_TRACKER_PORT}\"" >> $SINGULARITY_ENVIRONMENT
+
+# Compile TVM4J, then TVM's Android RPC app.
+cd /usr/tvm
+make jvmpkg
+make jvminstall
+cd /usr/tvm/apps/android_rpc
+gradle clean build
+dev_tools/gen_keystore.sh <<-'EOF'
+	password
+	password
+	FirstName LastName
+	OrganizationalUnit
+	OrganizationName
+	City
+	Province
+	CA
+	yes
+EOF
+dev_tools/sign_apk.sh <<-'EOF'
+	password
+EOF
+
+
+%startscript
+python3 -m tvm.exec.rpc_tracker --host="${TVM_TRACKER_HOST}" --port=${TVM_TRACKER_PORT}
